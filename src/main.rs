@@ -6,13 +6,15 @@ fn main() {
     println!("Hello, world!");
 }
 
-const STACK_SIZE: usize = 48;
-const MEMORY_SIZE: usize = 4096;
+const INSTRUCTIONS_PER_SECOND: u32 = 700;
 const SCREEN_WIDTH: usize = 64;
 const SCREEN_HEIGHT: usize = 32;
-const TIMER_DECREMENT_FREQUENCY: u32 = 60;
-const PC_START_ADDRESS: u16 = 0x200;
-const FONT_START_ADDRESS: u16 = 0x50;
+
+const STACK_SIZE: usize = 48;
+const MEMORY_SIZE: usize = 4096;
+const TIMER_DECREMENT_FREQUENCY: f32 = 60.0;
+const PC_START_ADDRESS: usize = 0x200;
+const FONT_START_ADDRESS: usize = 0x50;
 const FONT: [u8; 16 * 5] = [
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
     0x20, 0x60, 0x20, 0x20, 0x70, // 1
@@ -33,8 +35,8 @@ const FONT: [u8; 16 * 5] = [
 ];
 
 struct Interpreter {
-    pc: u16,
-    i: u16,
+    pc: usize,
+    i: usize,
     stack: Stack,
     memory: [u8; MEMORY_SIZE],
     registers: Registers,
@@ -58,6 +60,18 @@ impl Interpreter {
             timers: Timers::new(),
             screen_buffer: [0; SCREEN_WIDTH * SCREEN_HEIGHT],
         }
+    }
+
+    pub fn load_program(&mut self, bytes: &[u8]) {
+        for (i, byte) in bytes.iter().enumerate() {
+            self.memory[PC_START_ADDRESS + i] = *byte;
+        }
+    }
+
+    fn fetch_instruction(&mut self) -> u16 {
+        let instruction = ((self.memory[self.pc] as u16) << 8) | self.memory[self.pc + 1] as u16;
+        self.pc += 2;
+        instruction
     }
 }
 
@@ -133,8 +147,7 @@ impl Timers {
     pub fn decrement_timers(&mut self) {
         let now = Instant::now();
         let delta = now - self.last_update;
-        let amount =
-            TIMER_DECREMENT_FREQUENCY as f32 * delta.as_secs_f32() + self.rounding_remainder;
+        let amount = TIMER_DECREMENT_FREQUENCY * delta.as_secs_f32() + self.rounding_remainder;
         self.rounding_remainder = amount - amount.floor();
         let amount = amount.floor() as u8;
 
@@ -147,6 +160,9 @@ impl Timers {
             self.sound_timer -= amount;
         } else {
             self.sound_timer = 0;
+        }
+        if self.delay_timer + self.sound_timer == 0 {
+            self.rounding_remainder = 0.0;
         }
 
         self.last_update = now;
@@ -187,7 +203,6 @@ mod tests {
     }
 
     fn approx_equal_u8(lhs: u8, rhs: u8, max_deviation: u8) -> bool {
-        let (lhs, rhs) = if lhs > rhs { (lhs, rhs) } else { (rhs, lhs) };
-        lhs - rhs <= max_deviation
+        lhs.abs_diff(rhs) <= max_deviation
     }
 }
